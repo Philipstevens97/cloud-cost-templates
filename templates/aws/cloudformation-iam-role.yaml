@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Cloud Cost Lens - Read-Only Cost Access Integration.
+  This template creates an IAM role that grants Cloud Cost Lens
+  read-only access to your AWS Cost Explorer and Organizations data.
+  No write permissions are granted. You can revoke access at any time
+  by deleting this stack.
+  Learn more: https://docs.cloudcostlens.com/cloud-providers/aws
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Cloud Cost Lens Configuration
+        Parameters:
+          - CloudCostLensAccountId
+          - ExternalId
+    ParameterLabels:
+      CloudCostLensAccountId:
+        default: Cloud Cost Lens AWS Account ID
+      ExternalId:
+        default: External ID (provided by Cloud Cost Lens)
+
+Parameters:
+  CloudCostLensAccountId:
+    Type: String
+    Description: >
+      The AWS Account ID of Cloud Cost Lens. This is the account that will be
+      granted permission to assume the role created by this template.
+      This value is provided automatically by Cloud Cost Lens when you launch
+      this stack from the app.
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: Must be a valid 12-digit AWS account ID.
+    MinLength: 12
+    MaxLength: 12
+
+  ExternalId:
+    Type: String
+    Description: >
+      Your unique Cloud Cost Lens organization ID. This is used as the External ID
+      for the IAM role trust policy to prevent confused deputy attacks — it ensures
+      that only your specific Cloud Cost Lens organization can trigger role assumption.
+      This value is pre-filled automatically when you launch this stack from the
+      Cloud Cost Lens app. It is a UUID in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.
+    AllowedPattern: "^[a-zA-Z0-9\\-_]{8,128}$"
+    ConstraintDescription: >
+      Must be 8-128 characters containing only alphanumeric characters, hyphens,
+      and underscores. Your Cloud Cost Lens organization ID is pre-filled automatically.
+    MinLength: 8
+    MaxLength: 128
+
+Resources:
+  CloudCostLensRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CloudCostLensReadOnlyRole
+      Description: >
+        Grants Cloud Cost Lens read-only access to AWS Cost Explorer
+        and Organizations data for cost monitoring and analysis.
+      MaxSessionDuration: 3600 # 1 hour - minimum for assumed roles
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${CloudCostLensAccountId}:root"
+            Action: "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref ExternalId
+      Policies:
+        - PolicyName: CloudCostLensCostReadOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Cost Explorer - Read-only access to cost and usage data
+              - Sid: CostExplorerReadOnly
+                Effect: Allow
+                Action:
+                  - "ce:GetCostAndUsage"
+                  - "ce:GetCostForecast"
+                  - "ce:GetDimensionValues"
+                  - "ce:GetTags"
+                  - "ce:GetReservationUtilization"
+                  - "ce:GetReservationCoverage"
+                  - "ce:GetSavingsPlanUtilization"
+                  - "ce:GetSavingsPlansCoverage"
+                  - "ce:DescribeCostCategoryDefinition"
+                  - "ce:ListCostCategoryDefinitions"
+                Resource: "*"
+              # Organizations - Read-only metadata (account names, structure)
+              - Sid: OrganizationsReadOnly
+                Effect: Allow
+                Action:
+                  - "organizations:DescribeOrganization"
+                  - "organizations:ListAccounts"
+                  - "organizations:ListTagsForResource"
+                Resource: "*"
+              # Account - Read-only access to account alias for display
+              - Sid: AccountReadOnly
+                Effect: Allow
+                Action:
+                  - "iam:ListAccountAliases"
+                Resource: "*"
+      Tags:
+        - Key: Application
+          Value: CloudCostLens
+        - Key: Purpose
+          Value: ReadOnlyCostAccess
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Documentation
+          Value: https://docs.cloudcostlens.com/cloud-providers/aws
+
+Outputs:
+  RoleArn:
+    Description: >
+      The ARN of the IAM role created for Cloud Cost Lens.
+      Copy this value and paste it into the Cloud Cost Lens app
+      to complete the AWS connection.
+    Value: !GetAtt CloudCostLensRole.Arn
+    Export:
+      Name: CloudCostLensRoleArn
+
+  RoleName:
+    Description: The name of the IAM role created for Cloud Cost Lens.
+    Value: !Ref CloudCostLensRole
+
+  ExternalId:
+    Description: The External ID used for this integration.
+    Value: !Ref ExternalId
+
+  StackRegion:
+    Description: The AWS region where this stack was deployed.
+    Value: !Ref "AWS::Region"
